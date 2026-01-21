@@ -1,4 +1,5 @@
 # builtin
+from contextlib import asynccontextmanager
 import random, datetime
 from collections import deque
 
@@ -9,73 +10,20 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 # internal
+from app.modules import HexGame
 
+@asynccontextmanager
+def lifespan(app: FastAPI):
+    yield
 
-app = FastAPI()
+app = FastAPI(lifespan=lifespan)
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
 # --- In-memory game storage ---
 games = {}
 
-def empty_board(n=11):
-    return ["0" * n for _ in range(n)]
-
-def coord_to_index(coord):
-    col = ord(coord[0]) - 65
-    row = int(coord[1:]) - 1
-    return row, col
-
-def check_win(board, player):
-    n = len(board)
-    visited = set()
-    q = deque()
-    if player == "red":
-        for c in range(n):
-            if board[0][c] == "R":
-                q.append((0, c))
-                visited.add((0, c))
-        while q:
-            r, c = q.popleft()
-            if r == n - 1:
-                return True
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, 1), (1, -1)]:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < n and 0 <= nc < n and board[nr][nc] == "R" and (nr, nc) not in visited:
-                    visited.add((nr, nc))
-                    q.append((nr, nc))
-    else:
-        for r in range(n):
-            if board[r][0] == "B":
-                q.append((r, 0))
-                visited.add((r, 0))
-        while q:
-            r, c = q.popleft()
-            if c == n - 1:
-                return True
-            for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, 1), (1, -1)]:
-                nr, nc = r + dr, c + dc
-                if 0 <= nr < n and 0 <= nc < n and board[nr][nc] == "B" and (nr, nc) not in visited:
-                    visited.add((nr, nc))
-                    q.append((nr, nc))
-    return False
-
-def ai_move(board, opponent):
-    n = len(board)
-    opp = "R" if opponent == "blue" else "B"
-    empties = []
-    adj = []
-    for r in range(n):
-        for c in range(n):
-            if board[r][c] == "0":
-                empties.append((r, c))
-                for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, 1), (1, -1)]:
-                    nr, nc = r + dr, c + dc
-                    if 0 <= nr < n and 0 <= nc < n and board[nr][nc] == opp:
-                        adj.append((r, c))
-                        break
-    choice = random.choice(adj if adj else empties)
-    return chr(65 + choice[1]) + str(choice[0] + 1)
 
 @app.get("/", response_class=HTMLResponse)
 async def root(request: Request):
@@ -84,15 +32,7 @@ async def root(request: Request):
 @app.post("/create-game")
 async def create_game():
     game_id = f"g{random.randint(1000,9999)}"
-    games[game_id] = {
-        "gameId": game_id,
-        "board": empty_board(),
-        "player": "red",
-        "lastMove": "",
-        "moveNumber": 0,
-        "status": "ok",
-        "moves": []  # chronological move list
-    }
+    games[game_id] = HexGame(game_id=game_id)
     return games[game_id]
 
 @app.post("/submit-move")
