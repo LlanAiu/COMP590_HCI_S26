@@ -15,7 +15,7 @@ class HexGame:
     move_number: int
     status: str
     winner: str
-    moves: list[str]
+    moves: list[dict]
 
     def __init__(self, game_id: str):
         self.game_id = game_id
@@ -49,7 +49,7 @@ class HexGame:
         self.board[r] = "".join(row)
         self.last_move = move
         self.move_number += 1
-        self.moves.append(move)
+        self.moves.append({"move": move, "player": "R" if player == "red" else "B"})
 
         if check_win(self.board, player):
             self.status = "win"
@@ -66,7 +66,7 @@ class HexGame:
             self.board[r_ai] = "".join(row)
             self.last_move = ai
             self.move_number += 1
-            self.moves.append(ai)
+            self.moves.append({"move": ai, "player": "B"})
             if check_win(self.board, "blue"):
                 self.status = "win"
                 self.winner = "blue"

@@ -1,13 +1,15 @@
 const size = 11;
-const R = 30;
+let R = 20; // Will be set dynamically
+let boardOffsetX = 0;
+let boardOffsetY = 0;
 let state = null;
 const myRole = "red";
 let locked = false;
 
 // Lozenge hex geometry: p(i,j) = i*u + j*v
 function hexToPixel(row, col) {
-    const x = col * (Math.sqrt(3) * R) + row * (Math.sqrt(3) / 2 * R) + 50;
-    const y = row * (1.5 * R) + 50;
+    const x = col * (Math.sqrt(3) * R) + row * (Math.sqrt(3) / 2 * R) + boardOffsetX;
+    const y = row * (1.5 * R) + boardOffsetY;
     return [x, y];
 }
 
@@ -65,7 +67,20 @@ function drawBases(ctx) {
     ctx.restore();
 }
 
+function computeBoardGeometry(canvas) {
+    const margin = 20;
+    const w = canvas.width, h = canvas.height;
+    const maxRwidth = (w - 2 * margin) / ((size - 1) * Math.sqrt(3) + (size - 1) * Math.sqrt(3) / 2 + 2);
+    const maxRheight = (h - 2 * margin) / ((size - 1) * 1.5 + 2);
+    R = Math.floor(Math.min(maxRwidth, maxRheight));
+    const actualBoardWidth = (size - 1) * Math.sqrt(3) * R + (size - 1) * Math.sqrt(3) / 2 * R + 2 * R;
+    const actualBoardHeight = (size - 1) * 1.5 * R + 2 * R;
+    boardOffsetX = (w - actualBoardWidth) / 2 + R;
+    boardOffsetY = (h - actualBoardHeight) / 2 + R;
+}
+
 function drawBoard(ctx) {
+    computeBoardGeometry(ctx.canvas);
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
     drawBases(ctx);
     for (let r = 0; r < size; r++) {
@@ -79,11 +94,43 @@ function drawBoard(ctx) {
     }
 }
 
+
+function renderMoveHistory() {
+    if (!state || !state.moves) return;
+    const tableBody = document.querySelector('#moveHistoryTable tbody');
+    tableBody.innerHTML = '';
+    // Build two columns: Red and Blue, up to last 10 moves
+    const moves = state.moves.slice(-10); // last 10 moves
+    const redMoves = [];
+    const blueMoves = [];
+    for (let i = 0; i < moves.length; i++) {
+        if (moves[i].player === 'R') redMoves.push(moves[i].move);
+        else if (moves[i].player === 'B') blueMoves.push(moves[i].move);
+    }
+    // Pad arrays to equal length
+    const maxLen = Math.max(redMoves.length, blueMoves.length);
+    while (redMoves.length < maxLen) redMoves.push('');
+    while (blueMoves.length < maxLen) blueMoves.push('');
+    for (let i = 0; i < maxLen; i++) {
+        const row = document.createElement('tr');
+        const redCell = document.createElement('td');
+        redCell.textContent = redMoves[i];
+        redCell.style.textAlign = 'center';
+        const blueCell = document.createElement('td');
+        blueCell.textContent = blueMoves[i];
+        blueCell.style.textAlign = 'center';
+        row.appendChild(redCell);
+        row.appendChild(blueCell);
+        tableBody.appendChild(row);
+    }
+}
+
 async function startGame() {
     const res = await fetch('/create-game', { method: 'POST' });
     state = await res.json();
     document.getElementById("status").innerText = " Game started. Red goes first.";
     drawBoard(document.getElementById("board").getContext("2d"));
+    renderMoveHistory();
 }
 
 document.getElementById("board").addEventListener("click", async (e) => {
@@ -107,9 +154,11 @@ document.getElementById("board").addEventListener("click", async (e) => {
         body: JSON.stringify({ gameId: state.gameId, move: move, player: state.player })
     });
     state = await res.json();
+    console.log(state);
     locked = false;
     document.getElementById("status").innerText = " Turn: " + state.player + " | Move: " + state.lastMove + " | Status: " + state.status;
     drawBoard(document.getElementById("board").getContext("2d"));
+    renderMoveHistory();
 });
 
 // Download moves button

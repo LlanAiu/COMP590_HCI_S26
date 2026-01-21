@@ -19,7 +19,7 @@ async def download_moves(gameId: str, request: Request):
         return JSONResponse({"error": "Invalid gameId"}, status_code=400)
 
     moves = state.get("moves", [])
-    text = ",".join(moves)
+    text = ",".join(m["move"] for m in moves)
     ts = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     filename = f"hex_moves_{gameId}_{ts}.txt"
     headers = {
