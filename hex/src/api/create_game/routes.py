@@ -5,7 +5,7 @@ import random
 from fastapi import APIRouter, Request
 
 # internal
-from app.modules import HexGame
+from src.modules import HexGame
 
 
 create_game_router = APIRouter()

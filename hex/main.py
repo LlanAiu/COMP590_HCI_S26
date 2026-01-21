@@ -8,10 +8,10 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 # internal
-from app.api import create_game_router, submit_move_router, download_moves_router
+from src.api import create_game_router, submit_move_router, download_moves_router
 
 @asynccontextmanager
-def lifespan(app: FastAPI):
+async def lifespan(app: FastAPI):
     app.state.games = {}
     yield
 
