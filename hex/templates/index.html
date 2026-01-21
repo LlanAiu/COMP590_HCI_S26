@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Hex Game</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='css/hex.css') }}">
+</head>
+
+<body>
+    <h1>Hex Game</h1>
+    <div id="controls">
+        <button id="downloadMovesBtn">Download moves</button>
+        <span id="status"></span>
+    </div>
+    <canvas id="board" width="1200" height="700"></canvas>
+
+    <script src="{{ url_for('static', path='js/hex.js') }}"></script>
+</body>
+
+</html>
