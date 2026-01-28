@@ -323,6 +323,8 @@ class Game {
         this.BLUE_RIGHT = "BLUE_RIGHT";
         
         this.moves = []; // List of moves
+        this.winningPath = []; // Array of Hex objects representing the winning path
+        this.winningPathSet = new Set(); // Set of "q,r" strings for fast lookup
     }
 
     reset() {
@@ -333,6 +335,8 @@ class Game {
         this.ufRed = new UnionFind();
         this.ufBlue = new UnionFind();
         this.moves = [];
+        this.winningPath = [];
+        this.winningPathSet = new Set();
     }
 
     isValidMove(hex) {
@@ -378,6 +382,7 @@ class Game {
             
             if (this.ufRed.connected(this.RED_TOP, this.RED_BOTTOM)) {
                 this.winner = 'red';
+                this.computeWinningPath('red');
             }
         } else {
             // Blue
@@ -392,6 +397,32 @@ class Game {
             
             if (this.ufBlue.connected(this.BLUE_LEFT, this.BLUE_RIGHT)) {
                 this.winner = 'blue';
+                this.computeWinningPath('blue');
+            }
+        }
+    }
+
+    // Build the winning path (list of hexes) for the given player
+    computeWinningPath(player) {
+        this.winningPath = [];
+        this.winningPathSet = new Set();
+
+        let uf = player === 'red' ? this.ufRed : this.ufBlue;
+        let start = player === 'red' ? this.RED_TOP : this.BLUE_LEFT;
+
+        // Determine the canonical root representing the connected component
+        const root = uf.find(start);
+
+        // Iterate keys in the union-find parent map and collect those in the root
+        for (let k of uf.parent.keys()) {
+            // only include real hex keys that look like "q,r"
+            if (typeof k === 'string' && k.indexOf(',') !== -1) {
+                if (uf.find(k) === root) {
+                    const parts = k.split(',').map(Number);
+                    const h = new Hex(parts[0], parts[1]);
+                    this.winningPath.push(h);
+                    this.winningPathSet.add(k);
+                }
             }
         }
     }
@@ -448,8 +479,10 @@ class Renderer {
         for (let r = 0; r < this.game.size; r++) {
             for (let q = 0; q < this.game.size; q++) {
                 const hex = new Hex(q, r);
-                // Fill with black
-                this.drawHexPoly(hex, 'black', 'fill');
+                // Fill with board background or highlight winning path
+                const key = hex.toString();
+                const bg = (this.game.winningPathSet && this.game.winningPathSet.has(key)) ? this.colors.highlight : 'black';
+                this.drawHexPoly(hex, bg, 'fill');
                 // Outline with white
                 this.drawHexPoly(hex, 'white', 'stroke');
             }
