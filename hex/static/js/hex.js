@@ -1,24 +1,22 @@
 const size = 11;
-let R = 20; // Will be set dynamically
+let R = 20;
 let boardOffsetX = 0;
 let boardOffsetY = 0;
 let state = null;
 const myRole = "red";
 let locked = false;
 
-// Lozenge hex geometry: p(i,j) = i*u + j*v
 function hexToPixel(row, col) {
     const x = col * (Math.sqrt(3) * R) + row * (Math.sqrt(3) / 2 * R) + boardOffsetX;
     const y = row * (1.5 * R) + boardOffsetY;
     return [x, y];
 }
 
-// build a hex path (does not stroke/fill)
 function drawHexPath(ctx, x, y, radius, scale = 1.0) {
     ctx.beginPath();
     const r = radius * scale;
     for (let i = 0; i < 6; i++) {
-        const angle = Math.PI / 6 + i * Math.PI / 3; // rotated 30° flat-top
+        const angle = Math.PI / 6 + i * Math.PI / 3;
         const px = x + r * Math.cos(angle);
         const py = y + r * Math.sin(angle);
         if (i === 0) ctx.moveTo(px, py);
@@ -27,7 +25,6 @@ function drawHexPath(ctx, x, y, radius, scale = 1.0) {
     ctx.closePath();
 }
 
-// normal hex draw (uses drawHexPath)
 function drawHex(ctx, x, y, fillStyle, highlight = false) {
     drawHexPath(ctx, x, y, R, 1.0);
     ctx.fillStyle = fillStyle;
@@ -37,12 +34,10 @@ function drawHex(ctx, x, y, fillStyle, highlight = false) {
     ctx.stroke();
 }
 
-// draw subtle base highlights behind the board pieces
 function drawBases(ctx) {
     ctx.save();
     ctx.globalAlpha = 0.22;
 
-    // Red bases (first and last rows)
     ctx.fillStyle = "red";
     for (let c = 0; c < size; c++) {
         const [xTop, yTop] = hexToPixel(0, c);
@@ -53,7 +48,6 @@ function drawBases(ctx) {
         ctx.fill();
     }
 
-    // Blue bases (first and last columns)
     ctx.fillStyle = "blue";
     for (let r = 0; r < size; r++) {
         const [xLeft, yLeft] = hexToPixel(r, 0);
@@ -99,15 +93,15 @@ function renderMoveHistory() {
     if (!state || !state.moves) return;
     const tableBody = document.querySelector('#moveHistoryTable tbody');
     tableBody.innerHTML = '';
-    // Build two columns: Red and Blue, up to last 10 moves
-    const moves = state.moves.slice(-10); // last 10 moves
+
+    const moves = state.moves.slice(-10);
     const redMoves = [];
     const blueMoves = [];
     for (let i = 0; i < moves.length; i++) {
         if (moves[i].player === 'R') redMoves.push(moves[i].move);
         else if (moves[i].player === 'B') blueMoves.push(moves[i].move);
     }
-    // Pad arrays to equal length
+
     const maxLen = Math.max(redMoves.length, blueMoves.length);
     while (redMoves.length < maxLen) redMoves.push('');
     while (blueMoves.length < maxLen) blueMoves.push('');
@@ -161,7 +155,6 @@ document.getElementById("board").addEventListener("click", async (e) => {
     renderMoveHistory();
 });
 
-// Download moves button
 document.getElementById("downloadMovesBtn").addEventListener("click", async () => {
     if (!state || !state.gameId) return;
     const res = await fetch(`/download-moves?gameId=${encodeURIComponent(state.gameId)}`);
@@ -179,6 +172,25 @@ document.getElementById("downloadMovesBtn").addEventListener("click", async () =
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+});
+
+// Generated from PS1-Q2
+document.getElementById("undoBtn").addEventListener("click", async () => {
+    if (!state || !state.gameId) return;
+    const res = await fetch('/undo-move', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gameId: state.gameId })
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'undo failed' }));
+        alert("Undo failed: " + (err.error || res.statusText));
+        return;
+    }
+    state = await res.json();
+    document.getElementById("status").innerText = " Turn: " + state.player + " | Move: " + state.lastMove + " | Status: " + state.status;
+    drawBoard(document.getElementById("board").getContext("2d"));
+    renderMoveHistory();
 });
 
 startGame();

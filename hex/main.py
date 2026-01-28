@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 # internal
-from src.api import create_game_router, submit_move_router, download_moves_router
+from src.api import create_game_router, submit_move_router, download_moves_router, undo_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -27,3 +27,5 @@ async def root(request: Request):
 app.include_router(router=create_game_router)
 app.include_router(router=submit_move_router)
 app.include_router(router=download_moves_router)
+# Generated from PS1-Q2
+app.include_router(router=undo_router)

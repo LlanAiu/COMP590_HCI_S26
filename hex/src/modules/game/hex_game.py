@@ -72,6 +72,39 @@ class HexGame:
                 self.winner = "blue"
             else:
                 self.player = "red"
+
+    # Generated from PS1-Q2
+    def undo(self) -> bool:
+
+        if self.player != "red":
+            self.status = "invalid"
+            return False
+
+        if len(self.moves) < 2:
+            self.status = "invalid"
+            return False
+
+        for _ in range(2):
+            last = self.moves.pop()
+            mv = last["move"]
+            try:
+                r, c = coord_to_index(mv)
+            except Exception:
+                self.status = "invalid"
+                return False
+            row = list(self.board[r])
+            row[c] = "0"
+            self.board[r] = "".join(row)
+            self.move_number = max(0, self.move_number - 1)
+
+        self.last_move = self.moves[-1]["move"] if self.moves else ""
+        self.status = "ok"
+        self.winner = ""
+        self.player = "red"
+        return True
+    
+    def get_moves(self) -> list[dict]:
+        return self.moves
     
     def to_json(self) -> dict:
         return {
