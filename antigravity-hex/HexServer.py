@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 import datetime
+from pathlib import Path
 
 app = FastAPI()
 
@@ -996,9 +997,17 @@ HTML_TEMPLATE = """
 async def save_game(request: SaveRequest):
     timestamp = datetime.datetime.now().strftime("%y%m%d%H%M%S")
     filename = f"HEX{timestamp}.txt"
-    with open(filename, "w") as f:
-        f.write(request.moves)
-    return {"status": "success", "filename": filename}
+    downloads_dir = Path.home() / "Downloads"
+    try:
+        downloads_dir.mkdir(parents=True, exist_ok=True)
+        filepath = downloads_dir / filename
+        with open(filepath, "w", encoding="utf-8") as f:
+            f.write(request.moves)
+        return {"status": "success", "filename": str(filepath)}
+    except Exception as e:
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(request.moves)
+        return {"status": "success", "filename": filename, "warning": str(e)}
 
 @app.get("/", response_class=HTMLResponse)
 async def get_game():
