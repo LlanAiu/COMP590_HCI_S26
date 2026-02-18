@@ -720,6 +720,7 @@ const ai = new AI(game);
 const statusDisplay = document.getElementById('status-display');
 const btnPvP = document.getElementById('btn-pvp');
 const btnPvAI = document.getElementById('btn-pvai');
+const btnAIAI = document.getElementById('btn-aiai');
 const gameMessage = document.getElementById('game-message');
 const gameControls = document.getElementById('game-controls');
 
@@ -846,6 +847,7 @@ renderer.resize();
 
 btnPvP.addEventListener('click', () => startGame('pvp'));
 btnPvAI.addEventListener('click', () => startGame('pvai'));
+btnAIAI.addEventListener('click', () => startAIVsAI());
 
 function updateMoveList(hex, player) {
     const moveList = document.getElementById('move-list');
@@ -922,6 +924,40 @@ function saveGame() {
 
 document.getElementById('btn-save').addEventListener('click', saveGame);
 
+// --- AI vs AI Runner ---
+function startAIVsAI() {
+    gameMode = 'aivai';
+    game.reset();
+    // Clear move list UI
+    document.getElementById('move-list').innerHTML = '';
+    gameMessage.classList.add('hidden');
+
+    // Run AI moves until game over, then auto-save
+    function runAIMove() {
+        if (game.gameOver) {
+            // Save after the game finishes
+            saveGame();
+            return;
+        }
+
+        const currentPlayer = game.turn;
+        const aiMove = ai.getMove();
+        if (aiMove) {
+            game.makeMove(aiMove);
+            updateMoveList(aiMove, currentPlayer);
+            checkGameState();
+            // Small delay to allow UI update and to avoid blocking
+            setTimeout(runAIMove, 50);
+        } else {
+            // No moves available -> save and stop
+            saveGame();
+        }
+    }
+
+    // Kick off the AI vs AI loop
+    setTimeout(runAIMove, 150);
+}
+
 function loop() {
     renderer.draw();
     requestAnimationFrame(loop);
@@ -954,6 +990,7 @@ HTML_TEMPLATE = """
                 <div id="game-controls">
                     <button id="btn-pvp" class="btn secondary">Player vs Player</button>
                     <button id="btn-pvai" class="btn primary">Player vs AI</button>
+                    <button id="btn-aiai" class="btn secondary">AI vs AI</button>
                     <button id="btn-save" class="btn secondary">Save</button>
                 </div>
                 <div id="game-message" class="hidden"></div>
