@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Circle Packing</title>
+    <link rel="stylesheet" href="/static/css/circle-packing.css" />
+</head>
+
+<body>
+    <div id="toolbar">
+        <label>Grid:
+            <select id="gridSelect">
+                <option value="none">None</option>
+                <option value="square">Square</option>
+                <option value="hex">Hex</option>
+            </select>
+        </label>
+        <label>Circles: <input id="numCircles" type="number" min="1" value="10" /></label>
+        <button id="generateBtn">Generate</button>
+        <label><input id="showGrid" type="checkbox" /> Show grid overlay</label>
+        <label><input id="forceTangent" type="checkbox" checked /> Force tangent placement</label>
+        <span id="areaDisplay"></span>
+    </div>
+    <canvas id="canvas"></canvas>
+
+    <script src="/static/js/circle-packing.js"></script>
+</body>
+
+</html>

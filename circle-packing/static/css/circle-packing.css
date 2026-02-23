@@ -1,0 +1,71 @@
+html,
+body {
+    height: 100%;
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    margin-left: 8px;
+    font-weight: 600
+}
+
+/* simple responsive canvas container */
+body {
+    #toolbar {
+        padding: 10px 12px;
+        background: linear-gradient(#ffffff, #f7f9fb);
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        box-shadow: 0 1px 0 rgba(0, 0, 0, 0.05)
+    }
+
+    #toolbar label {
+        font-size: 14px;
+        color: #333
+    }
+
+    #toolbar select,
+    #toolbar input[type=number] {
+        padding: 6px 8px;
+        border-radius: 6px;
+        border: 1px solid #dfe6ee
+    }
+
+    #toolbar button {
+        padding: 7px 12px;
+        border-radius: 6px;
+        border: 1px solid #2f6be4;
+        background: #3a78ff;
+        color: white;
+        cursor: pointer
+    }
+
+    #toolbar button:hover {
+        background: #2f6be4
+    }
+
+    #canvas {
+        display: block;
+        width: 100%;
+        height: calc(100% - 56px);
+        background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+        cursor: crosshair;
+        border-top: 1px solid #e8eef6
+    }
+
+    #areaDisplay {
+        margin-left: 8px;
+        font-weight: 600;
+        color: #2b2b2b
+    }
+
+    /* make controls compact on small screens */
+    @media (max-width: 520px) {
+        #toolbar {
+            flex-wrap: wrap
+        }
+    }
+
+    display: flex;
+    flex-direction: column;
+    height: 100vh
+}
