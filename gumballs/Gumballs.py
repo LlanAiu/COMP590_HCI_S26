@@ -36,6 +36,7 @@ HTML_CONTENT = """
         </label>
         <button onclick="submitLayout()">Submit Layout</button>
         <button onclick="resetCanvas()" style="background:#dc3545">Reset</button>
+        <button id="shrinkBtn" onclick="shrinkContainer()" style="background:#28a745; margin-left:8px">Shrink container</button>
         <div class="stats" id="stats">Placed: 0 | Remaining: 23 | Square Side: 0</div>
     </div>
     <canvas id="canvas" width="800" height="800"></canvas>
@@ -48,6 +49,146 @@ HTML_CONTENT = """
         const sqGridCb = document.getElementById('sqGrid');
         const hexGridCb = document.getElementById('hexGrid');
         const shapeSelect = document.getElementById('shapeSelect');
+
+        // Helper: compute bounding shape for given point array (does same logic as draw's former computeBoundingShape)
+        function computeBoundingShapeFor(pts) {
+            const shape = shapeSelect.value;
+            if (shape === 'square') {
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                pts.forEach(c => {
+                    if (c.x - R < minX) minX = c.x - R;
+                    if (c.x + R > maxX) maxX = c.x + R;
+                    if (c.y - R < minY) minY = c.y - R;
+                    if (c.y + R > maxY) maxY = c.y + R;
+                });
+                const width = maxX - minX;
+                const height = maxY - minY;
+                const side = Math.max(width, height);
+                const centerX = minX + width / 2;
+                const centerY = minY + height / 2;
+                const sqX = centerX - side / 2;
+                const sqY = centerY - side / 2;
+                return { type: 'square', x: sqX, y: sqY, side: side };
+            } else if (shape === 'circle') {
+                const pts2 = pts.map(c => ({ x: c.x, y: c.y }));
+                function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+                function shuffle(array) {
+                    for (let i = array.length - 1; i > 0; i--) {
+                        const j = Math.floor(Math.random() * (i + 1));
+                        [array[i], array[j]] = [array[j], array[i]];
+                    }
+                }
+                function circleFromTwo(a, b) {
+                    const cx = (a.x + b.x) / 2;
+                    const cy = (a.y + b.y) / 2;
+                    return { x: cx, y: cy, r: dist(a, b) / 2 };
+                }
+                function circleFromThree(a, b, c) {
+                    const A = b.x - a.x, B = b.y - a.y;
+                    const C = c.x - a.x, D = c.y - a.y;
+                    const E = A * (a.x + b.x) + B * (a.y + b.y);
+                    const F = C * (a.x + c.x) + D * (a.y + c.y);
+                    const G = 2 * (A * (c.y - b.y) - B * (c.x - b.x));
+                    if (Math.abs(G) < 1e-12) return null;
+                    const cx = (D * E - B * F) / G;
+                    const cy = (A * F - C * E) / G;
+                    return { x: cx, y: cy, r: dist({ x: cx, y: cy }, a) };
+                }
+                function isInCircle(p, c) { return c && dist(p, { x: c.x, y: c.y }) <= c.r + 1e-8; }
+                if (pts2.length === 0) return { type: 'circle', x: canvas.width/2, y: canvas.height/2, r: 0 };
+                shuffle(pts2);
+                let c = { x: pts2[0].x, y: pts2[0].y, r: 0 };
+                for (let i = 1; i < pts2.length; i++) {
+                    const p = pts2[i];
+                    if (isInCircle(p, c)) continue;
+                    c = { x: p.x, y: p.y, r: 0 };
+                    for (let j = 0; j < i; j++) {
+                        const q = pts2[j];
+                        if (isInCircle(q, c)) continue;
+                        c = circleFromTwo(p, q);
+                        for (let k = 0; k < j; k++) {
+                            const rP = pts2[k];
+                            if (isInCircle(rP, c)) continue;
+                            const circ = circleFromThree(p, q, rP);
+                            if (circ) c = circ;
+                        }
+                    }
+                }
+                return { type: 'circle', x: c.x, y: c.y, r: c.r + R };
+            } else if (shape === 'diamond') {
+                const pts2 = pts.map(c => ({ x: c.x, y: c.y }));
+                if (pts2.length === 0) return { type: 'diamond', points: [], side: 0 };
+                function normRow0(minv) { return Math.hypot(minv[0][0], minv[0][1]); }
+                function normRow1(minv) { return Math.hypot(minv[1][0], minv[1][1]); }
+                function evalTheta(theta) {
+                    const ux = Math.cos(theta), uy = Math.sin(theta);
+                    const vx = Math.cos(theta + Math.PI/3), vy = Math.sin(theta + Math.PI/3);
+                    const det = ux * vy - uy * vx;
+                    if (Math.abs(det) < 1e-12) return null;
+                    const minv = [[ vy/det, -vx/det ], [ -uy/det, ux/det ]];
+                    let minTx = Infinity, maxTx = -Infinity, minTy = Infinity, maxTy = -Infinity;
+                    for (let i = 0; i < pts2.length; i++) {
+                        const p = pts2[i];
+                        const tx = minv[0][0]*p.x + minv[0][1]*p.y;
+                        const ty = minv[1][0]*p.x + minv[1][1]*p.y;
+                        if (tx < minTx) minTx = tx;
+                        if (tx > maxTx) maxTx = tx;
+                        if (ty < minTy) minTy = ty;
+                        if (ty > maxTy) maxTy = ty;
+                    }
+                    const rx = R * normRow0(minv);
+                    const ry = R * normRow1(minv);
+                    const rangeX = (maxTx - minTx) + 2 * rx;
+                    const rangeY = (maxTy - minTy) + 2 * ry;
+                    const s_req = Math.max(rangeX, rangeY);
+                    const o_tx = minTx - rx;
+                    const o_ty = minTy - ry;
+                    const ox = ux * o_tx + vx * o_ty;
+                    const oy = uy * o_tx + vy * o_ty;
+                    return { s: s_req, o: { x: ox, y: oy }, u: { x: ux, y: uy }, v: { x: vx, y: vy } };
+                }
+                let best = null;
+                const coarseSteps = 180;
+                for (let i = 0; i < coarseSteps; i++) {
+                    const theta = (i / coarseSteps) * Math.PI;
+                    const res = evalTheta(theta);
+                    if (!res) continue;
+                    if (!best || res.s < best.s) best = { ...res, theta };
+                }
+                if (best) {
+                    let lo = best.theta - Math.PI / coarseSteps;
+                    let hi = best.theta + Math.PI / coarseSteps;
+                    for (let iter = 0; iter < 30; iter++) {
+                        let improved = false;
+                        const steps = 40;
+                        for (let j = 0; j <= steps; j++) {
+                            const theta = lo + (j / steps) * (hi - lo);
+                            const res = evalTheta(theta);
+                            if (!res) continue;
+                            if (res.s < best.s) {
+                                best = { ...res, theta };
+                                improved = true;
+                            }
+                        }
+                        const span = (hi - lo) / 4;
+                        lo = best.theta - span;
+                        hi = best.theta + span;
+                        if (!improved) break;
+                    }
+                }
+                if (!best) return null;
+                const s = best.s;
+                const o = best.o;
+                const u = best.u;
+                const v = best.v;
+                const p0 = { x: o.x, y: o.y };
+                const p1 = { x: o.x + s * u.x, y: o.y + s * u.y };
+                const p2 = { x: o.x + s * (u.x + v.x), y: o.y + s * (u.y + v.y) };
+                const p3 = { x: o.x + s * v.x, y: o.y + s * v.y };
+                return { type: 'diamond', points: [p0, p1, p2, p3], side: s };
+            }
+            return null;
+        }
 
         let R = 20; // Visual radius (represents 1 unit)
         let circles = [];
@@ -247,174 +388,8 @@ HTML_CONTENT = """
                 return;
             }
 
-            // compute bounding shape based on selection
-            function computeBoundingShape() {
-                if (shape === 'square') {
-                    // 1. Calculate Bounding Box (existing behavior)
-                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                    circles.forEach(c => {
-                        if (c.x - R < minX) minX = c.x - R;
-                        if (c.x + R > maxX) maxX = c.x + R;
-                        if (c.y - R < minY) minY = c.y - R;
-                        if (c.y + R > maxY) maxY = c.y + R;
-                    });
-
-                    const width = maxX - minX;
-                    const height = maxY - minY;
-                    const side = Math.max(width, height);
-                    const centerX = minX + width / 2;
-                    const centerY = minY + height / 2;
-                    const sqX = centerX - side / 2;
-                    const sqY = centerY - side / 2;
-                    return { type: 'square', x: sqX, y: sqY, side: side };
-                } else if (shape === 'circle') {
-                    // Minimum Enclosing Circle (for circle centers) using Welzl-like algorithm
-                    const pts = circles.map(c => ({ x: c.x, y: c.y }));
-                    function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
-                    function shuffle(array) {
-                        for (let i = array.length - 1; i > 0; i--) {
-                            const j = Math.floor(Math.random() * (i + 1));
-                            [array[i], array[j]] = [array[j], array[i]];
-                        }
-                    }
-                    function circleFromTwo(a, b) {
-                        const cx = (a.x + b.x) / 2;
-                        const cy = (a.y + b.y) / 2;
-                        return { x: cx, y: cy, r: dist(a, b) / 2 };
-                    }
-                    function circleFromThree(a, b, c) {
-                        const A = b.x - a.x, B = b.y - a.y;
-                        const C = c.x - a.x, D = c.y - a.y;
-                        const E = A * (a.x + b.x) + B * (a.y + b.y);
-                        const F = C * (a.x + c.x) + D * (a.y + c.y);
-                        const G = 2 * (A * (c.y - b.y) - B * (c.x - b.x));
-                        if (Math.abs(G) < 1e-12) return null;
-                        const cx = (D * E - B * F) / G;
-                        const cy = (A * F - C * E) / G;
-                        return { x: cx, y: cy, r: dist({ x: cx, y: cy }, a) };
-                    }
-                    function isInCircle(p, c) { return c && dist(p, { x: c.x, y: c.y }) <= c.r + 1e-8; }
-
-                    if (pts.length === 0) return { type: 'circle', x: canvas.width/2, y: canvas.height/2, r: 0 };
-
-                    shuffle(pts);
-                    let c = { x: pts[0].x, y: pts[0].y, r: 0 };
-                    for (let i = 1; i < pts.length; i++) {
-                        const p = pts[i];
-                        if (isInCircle(p, c)) continue;
-                        c = { x: p.x, y: p.y, r: 0 };
-                        for (let j = 0; j < i; j++) {
-                            const q = pts[j];
-                            if (isInCircle(q, c)) continue;
-                            c = circleFromTwo(p, q);
-                            for (let k = 0; k < j; k++) {
-                                const rP = pts[k];
-                                if (isInCircle(rP, c)) continue;
-                                const circ = circleFromThree(p, q, rP);
-                                if (circ) c = circ;
-                            }
-                        }
-                    }
-                    // Add visual radius R to fully enclose circles (centers + circle radius)
-                    return { type: 'circle', x: c.x, y: c.y, r: c.r + R };
-                } else if (shape === 'diamond') {
-                    // Diamond = two equilateral triangles sharing a side (rhombus with 60/120 deg angles)
-                    // We search orientation theta in [0, PI) to minimize the side length s.
-                    const pts = circles.map(c => ({ x: c.x, y: c.y }));
-                    if (pts.length === 0) return { type: 'diamond', points: [], side: 0 };
-
-                    function normRow0(minv) { return Math.hypot(minv[0][0], minv[0][1]); }
-                    function normRow1(minv) { return Math.hypot(minv[1][0], minv[1][1]); }
-
-                    // Evaluate a candidate orientation (theta), return minimal required side s and origin o
-                    function evalTheta(theta) {
-                        const ux = Math.cos(theta), uy = Math.sin(theta);
-                        const vx = Math.cos(theta + Math.PI/3), vy = Math.sin(theta + Math.PI/3);
-                        // M = [u v]
-                        const det = ux * vy - uy * vx;
-                        if (Math.abs(det) < 1e-12) return null;
-                        // inverse of M
-                        const minv = [[ vy/det, -vx/det ], [ -uy/det, ux/det ]];
-
-                        // transform points into t-space: t = M^{-1} * p
-                        let minTx = Infinity, maxTx = -Infinity, minTy = Infinity, maxTy = -Infinity;
-                        for (let i = 0; i < pts.length; i++) {
-                            const p = pts[i];
-                            const tx = minv[0][0]*p.x + minv[0][1]*p.y;
-                            const ty = minv[1][0]*p.x + minv[1][1]*p.y;
-                            if (tx < minTx) minTx = tx;
-                            if (tx > maxTx) maxTx = tx;
-                            if (ty < minTy) minTy = ty;
-                            if (ty > maxTy) maxTy = ty;
-                        }
-
-                        // To fully enclose circles (radius R), expand ranges in t-space by the projected extents.
-                        const rx = R * normRow0(minv); // max change in t.x from a world-space circle of radius R
-                        const ry = R * normRow1(minv); // max change in t.y
-
-                        const rangeX = (maxTx - minTx) + 2 * rx;
-                        const rangeY = (maxTy - minTy) + 2 * ry;
-                        const s_req = Math.max(rangeX, rangeY);
-
-                        // choose o_t such that square covers (minTx - rx) .. (minTx - rx + s_req)
-                        const o_tx = minTx - rx;
-                        const o_ty = minTy - ry;
-
-                        // world-space origin o = M * o_t
-                        const ox = ux * o_tx + vx * o_ty;
-                        const oy = uy * o_tx + vy * o_ty;
-                        return { s: s_req, o: { x: ox, y: oy }, u: { x: ux, y: uy }, v: { x: vx, y: vy } };
-                    }
-
-                    // coarse search then refine
-                    let best = null;
-                    const coarseSteps = 180; // 1 degree steps
-                    for (let i = 0; i < coarseSteps; i++) {
-                        const theta = (i / coarseSteps) * Math.PI;
-                        const res = evalTheta(theta);
-                        if (!res) continue;
-                        if (!best || res.s < best.s) best = { ...res, theta };
-                    }
-                    // refine around best
-                    if (best) {
-                        let lo = best.theta - Math.PI / coarseSteps;
-                        let hi = best.theta + Math.PI / coarseSteps;
-                        for (let iter = 0; iter < 30; iter++) {
-                            let improved = false;
-                            const steps = 40;
-                            for (let j = 0; j <= steps; j++) {
-                                const theta = lo + (j / steps) * (hi - lo);
-                                const res = evalTheta(theta);
-                                if (!res) continue;
-                                if (res.s < best.s) {
-                                    best = { ...res, theta };
-                                    improved = true;
-                                }
-                            }
-                            const span = (hi - lo) / 4;
-                            lo = best.theta - span;
-                            hi = best.theta + span;
-                            if (!improved) break;
-                        }
-                    }
-
-                    if (!best) return null;
-
-                    // build rhombus vertices: o, o + s*u, o + s*(u+v), o + s*v
-                    const s = best.s;
-                    const o = best.o;
-                    const u = best.u;
-                    const v = best.v;
-                    const p0 = { x: o.x, y: o.y };
-                    const p1 = { x: o.x + s * u.x, y: o.y + s * u.y };
-                    const p2 = { x: o.x + s * (u.x + v.x), y: o.y + s * (u.y + v.y) };
-                    const p3 = { x: o.x + s * v.x, y: o.y + s * v.y };
-                    return { type: 'diamond', points: [p0, p1, p2, p3], side: s };
-                }
-                return null;
-            }
-
-            const bounding = computeBoundingShape();
+            // compute bounding shape using helper so SA can reuse same logic
+            const bounding = computeBoundingShapeFor(circles);
 
             // 1. Calculate Bounding Box
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -481,6 +456,79 @@ HTML_CONTENT = """
             } else {
                 statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining}`;
             }
+        }
+
+        // Objective evaluation (lower is better). Adds overlap penalty.
+        function objectiveForPoints(pts) {
+            const bounding = computeBoundingShapeFor(pts);
+            if (!bounding) return Infinity;
+            let val = 0;
+            if (bounding.type === 'square') val = bounding.side;
+            else if (bounding.type === 'circle') val = bounding.r;
+            else if (bounding.type === 'diamond') val = bounding.side;
+
+            // Overlap penalty
+            let penalty = 0;
+            for (let i = 0; i < pts.length; i++) {
+                for (let j = i+1; j < pts.length; j++) {
+                    const dx = pts[i].x - pts[j].x;
+                    const dy = pts[i].y - pts[j].y;
+                    const d = Math.hypot(dx, dy);
+                    const minDist = 2 * R * 0.999;
+                    if (d < minDist) penalty += (minDist - d);
+                }
+            }
+            const penaltyWeight = R * 50;
+            return val + penaltyWeight * penalty;
+        }
+
+        // Simulated annealing to try to shrink the bounding shape
+        async function shrinkContainer() {
+            const btn = document.getElementById('shrinkBtn');
+            btn.disabled = true;
+            const pts = circles.map(c => ({ x: c.x, y: c.y, id: c.id }));
+            if (pts.length === 0) { btn.disabled = false; return; }
+
+            let bestPts = pts.map(p => ({ x: p.x, y: p.y }));
+            let bestValue = objectiveForPoints(bestPts);
+
+            const maxIters = 2000;
+            let T0 = 1.0;
+            for (let iter = 0; iter < maxIters; iter++) {
+                const T = T0 * (1 - iter / maxIters);
+                // propose move
+                const i = Math.floor(Math.random() * pts.length);
+                const oldx = pts[i].x, oldy = pts[i].y;
+                const step = R * (0.5 + Math.random() * 2.0) * (1 - iter / maxIters);
+                pts[i].x += (Math.random() - 0.5) * 2 * step;
+                pts[i].y += (Math.random() - 0.5) * 2 * step;
+
+                const val = objectiveForPoints(pts);
+                const delta = val - bestValue;
+                if (val < bestValue || Math.random() < Math.exp(-Math.max(0, delta) / Math.max(1e-6, T))) {
+                    // accept
+                    if (val < bestValue) {
+                        bestValue = val;
+                        bestPts = pts.map(p => ({ x: p.x, y: p.y }));
+                    }
+                } else {
+                    // revert
+                    pts[i].x = oldx; pts[i].y = oldy;
+                }
+
+                // occasionally yield to UI
+                if (iter % 200 === 0) {
+                    // copy to circles for visual feedback
+                    for (let k = 0; k < circles.length; k++) { circles[k].x = pts[k].x; circles[k].y = pts[k].y; }
+                    draw();
+                    await new Promise(r => setTimeout(r, 10));
+                }
+            }
+
+            // apply best
+            for (let k = 0; k < circles.length; k++) { circles[k].x = bestPts[k].x; circles[k].y = bestPts[k].y; }
+            draw();
+            btn.disabled = false;
         }
 
         function resetCanvas() {
