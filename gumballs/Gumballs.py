@@ -31,6 +31,7 @@ HTML_CONTENT = """
             <select id="shapeSelect" onchange="draw()">
                 <option value="square">Square</option>
                 <option value="circle">Circle</option>
+                <option value="diamond">Diamond</option>
             </select>
         </label>
         <button onclick="submitLayout()">Submit Layout</button>
@@ -316,6 +317,99 @@ HTML_CONTENT = """
                     }
                     // Add visual radius R to fully enclose circles (centers + circle radius)
                     return { type: 'circle', x: c.x, y: c.y, r: c.r + R };
+                } else if (shape === 'diamond') {
+                    // Diamond = two equilateral triangles sharing a side (rhombus with 60/120 deg angles)
+                    // We search orientation theta in [0, PI) to minimize the side length s.
+                    const pts = circles.map(c => ({ x: c.x, y: c.y }));
+                    if (pts.length === 0) return { type: 'diamond', points: [], side: 0 };
+
+                    function normRow0(minv) { return Math.hypot(minv[0][0], minv[0][1]); }
+                    function normRow1(minv) { return Math.hypot(minv[1][0], minv[1][1]); }
+
+                    // Evaluate a candidate orientation (theta), return minimal required side s and origin o
+                    function evalTheta(theta) {
+                        const ux = Math.cos(theta), uy = Math.sin(theta);
+                        const vx = Math.cos(theta + Math.PI/3), vy = Math.sin(theta + Math.PI/3);
+                        // M = [u v]
+                        const det = ux * vy - uy * vx;
+                        if (Math.abs(det) < 1e-12) return null;
+                        // inverse of M
+                        const minv = [[ vy/det, -vx/det ], [ -uy/det, ux/det ]];
+
+                        // transform points into t-space: t = M^{-1} * p
+                        let minTx = Infinity, maxTx = -Infinity, minTy = Infinity, maxTy = -Infinity;
+                        for (let i = 0; i < pts.length; i++) {
+                            const p = pts[i];
+                            const tx = minv[0][0]*p.x + minv[0][1]*p.y;
+                            const ty = minv[1][0]*p.x + minv[1][1]*p.y;
+                            if (tx < minTx) minTx = tx;
+                            if (tx > maxTx) maxTx = tx;
+                            if (ty < minTy) minTy = ty;
+                            if (ty > maxTy) maxTy = ty;
+                        }
+
+                        // To fully enclose circles (radius R), expand ranges in t-space by the projected extents.
+                        const rx = R * normRow0(minv); // max change in t.x from a world-space circle of radius R
+                        const ry = R * normRow1(minv); // max change in t.y
+
+                        const rangeX = (maxTx - minTx) + 2 * rx;
+                        const rangeY = (maxTy - minTy) + 2 * ry;
+                        const s_req = Math.max(rangeX, rangeY);
+
+                        // choose o_t such that square covers (minTx - rx) .. (minTx - rx + s_req)
+                        const o_tx = minTx - rx;
+                        const o_ty = minTy - ry;
+
+                        // world-space origin o = M * o_t
+                        const ox = ux * o_tx + vx * o_ty;
+                        const oy = uy * o_tx + vy * o_ty;
+                        return { s: s_req, o: { x: ox, y: oy }, u: { x: ux, y: uy }, v: { x: vx, y: vy } };
+                    }
+
+                    // coarse search then refine
+                    let best = null;
+                    const coarseSteps = 180; // 1 degree steps
+                    for (let i = 0; i < coarseSteps; i++) {
+                        const theta = (i / coarseSteps) * Math.PI;
+                        const res = evalTheta(theta);
+                        if (!res) continue;
+                        if (!best || res.s < best.s) best = { ...res, theta };
+                    }
+                    // refine around best
+                    if (best) {
+                        let lo = best.theta - Math.PI / coarseSteps;
+                        let hi = best.theta + Math.PI / coarseSteps;
+                        for (let iter = 0; iter < 30; iter++) {
+                            let improved = false;
+                            const steps = 40;
+                            for (let j = 0; j <= steps; j++) {
+                                const theta = lo + (j / steps) * (hi - lo);
+                                const res = evalTheta(theta);
+                                if (!res) continue;
+                                if (res.s < best.s) {
+                                    best = { ...res, theta };
+                                    improved = true;
+                                }
+                            }
+                            const span = (hi - lo) / 4;
+                            lo = best.theta - span;
+                            hi = best.theta + span;
+                            if (!improved) break;
+                        }
+                    }
+
+                    if (!best) return null;
+
+                    // build rhombus vertices: o, o + s*u, o + s*(u+v), o + s*v
+                    const s = best.s;
+                    const o = best.o;
+                    const u = best.u;
+                    const v = best.v;
+                    const p0 = { x: o.x, y: o.y };
+                    const p1 = { x: o.x + s * u.x, y: o.y + s * u.y };
+                    const p2 = { x: o.x + s * (u.x + v.x), y: o.y + s * (u.y + v.y) };
+                    const p3 = { x: o.x + s * v.x, y: o.y + s * v.y };
+                    return { type: 'diamond', points: [p0, p1, p2, p3], side: s };
                 }
                 return null;
             }
@@ -351,6 +445,17 @@ HTML_CONTENT = """
                     ctx.beginPath();
                     ctx.arc(bounding.x, bounding.y, bounding.r, 0, Math.PI * 2);
                     ctx.stroke();
+                } else if (bounding.type === 'diamond') {
+                    ctx.beginPath();
+                    const pts = bounding.points;
+                    if (pts && pts.length === 4) {
+                        ctx.moveTo(pts[0].x, pts[0].y);
+                        ctx.lineTo(pts[1].x, pts[1].y);
+                        ctx.lineTo(pts[2].x, pts[2].y);
+                        ctx.lineTo(pts[3].x, pts[3].y);
+                        ctx.closePath();
+                        ctx.stroke();
+                    }
                 }
             }
             ctx.setLineDash([]);
@@ -370,6 +475,8 @@ HTML_CONTENT = """
                     statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining} | Square Side: ${(bounding.side / R).toFixed(2)} units`;
                 } else if (bounding.type === 'circle') {
                     statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining} | Radius: ${(bounding.r / R).toFixed(2)} units`;
+                } else if (bounding.type === 'diamond') {
+                    statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining} | Diamond Side: ${(bounding.side / R).toFixed(2)} units`;
                 }
             } else {
                 statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining}`;
