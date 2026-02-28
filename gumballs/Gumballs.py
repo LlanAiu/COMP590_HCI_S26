@@ -1,11 +1,11 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 import uvicorn
+import json
+import time
+from io import BytesIO
 
 app = FastAPI()
-
-# Global list to store submitted layouts (in memory for this example)
-submitted_layouts = []
 
 HTML_CONTENT = """
 <!DOCTYPE html>
@@ -27,6 +27,12 @@ HTML_CONTENT = """
         Circles: <input type="number" id="circleLimit" value="23" min="1" style="width: 50px;">
         <label style="margin-left:10px;"><input type="checkbox" id="sqGrid" onclick="toggleGrid('sq')"> Square Grid</label>
         <label style="margin-left:10px; margin-right:10px;"><input type="checkbox" id="hexGrid" onclick="toggleGrid('hex')"> Hex Grid</label>
+        <label style="margin-left:10px; margin-right:10px;">Bounding Shape:
+            <select id="shapeSelect" onchange="draw()">
+                <option value="square">Square</option>
+                <option value="circle">Circle</option>
+            </select>
+        </label>
         <button onclick="submitLayout()">Submit Layout</button>
         <button onclick="resetCanvas()" style="background:#dc3545">Reset</button>
         <div class="stats" id="stats">Placed: 0 | Remaining: 23 | Square Side: 0</div>
@@ -40,6 +46,7 @@ HTML_CONTENT = """
         const statsDisplay = document.getElementById('stats');
         const sqGridCb = document.getElementById('sqGrid');
         const hexGridCb = document.getElementById('hexGrid');
+        const shapeSelect = document.getElementById('shapeSelect');
 
         let R = 20; // Visual radius (represents 1 unit)
         let circles = [];
@@ -232,11 +239,88 @@ HTML_CONTENT = """
             // Update stats
             const limit = parseInt(limitInput.value) || 0;
             const remaining = Math.max(0, limit - circles.length);
-            
+            const shape = shapeSelect.value;
+
             if (circles.length === 0) {
-                statsDisplay.innerText = `Placed: 0 | Remaining: ${remaining} | Square Side: 0.00 units`;
+                statsDisplay.innerText = `Placed: 0 | Remaining: ${remaining} | ${shape === 'square' ? 'Square Side' : 'Radius'}: 0.00 units`;
                 return;
             }
+
+            // compute bounding shape based on selection
+            function computeBoundingShape() {
+                if (shape === 'square') {
+                    // 1. Calculate Bounding Box (existing behavior)
+                    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                    circles.forEach(c => {
+                        if (c.x - R < minX) minX = c.x - R;
+                        if (c.x + R > maxX) maxX = c.x + R;
+                        if (c.y - R < minY) minY = c.y - R;
+                        if (c.y + R > maxY) maxY = c.y + R;
+                    });
+
+                    const width = maxX - minX;
+                    const height = maxY - minY;
+                    const side = Math.max(width, height);
+                    const centerX = minX + width / 2;
+                    const centerY = minY + height / 2;
+                    const sqX = centerX - side / 2;
+                    const sqY = centerY - side / 2;
+                    return { type: 'square', x: sqX, y: sqY, side: side };
+                } else if (shape === 'circle') {
+                    // Minimum Enclosing Circle (for circle centers) using Welzl-like algorithm
+                    const pts = circles.map(c => ({ x: c.x, y: c.y }));
+                    function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+                    function shuffle(array) {
+                        for (let i = array.length - 1; i > 0; i--) {
+                            const j = Math.floor(Math.random() * (i + 1));
+                            [array[i], array[j]] = [array[j], array[i]];
+                        }
+                    }
+                    function circleFromTwo(a, b) {
+                        const cx = (a.x + b.x) / 2;
+                        const cy = (a.y + b.y) / 2;
+                        return { x: cx, y: cy, r: dist(a, b) / 2 };
+                    }
+                    function circleFromThree(a, b, c) {
+                        const A = b.x - a.x, B = b.y - a.y;
+                        const C = c.x - a.x, D = c.y - a.y;
+                        const E = A * (a.x + b.x) + B * (a.y + b.y);
+                        const F = C * (a.x + c.x) + D * (a.y + c.y);
+                        const G = 2 * (A * (c.y - b.y) - B * (c.x - b.x));
+                        if (Math.abs(G) < 1e-12) return null;
+                        const cx = (D * E - B * F) / G;
+                        const cy = (A * F - C * E) / G;
+                        return { x: cx, y: cy, r: dist({ x: cx, y: cy }, a) };
+                    }
+                    function isInCircle(p, c) { return c && dist(p, { x: c.x, y: c.y }) <= c.r + 1e-8; }
+
+                    if (pts.length === 0) return { type: 'circle', x: canvas.width/2, y: canvas.height/2, r: 0 };
+
+                    shuffle(pts);
+                    let c = { x: pts[0].x, y: pts[0].y, r: 0 };
+                    for (let i = 1; i < pts.length; i++) {
+                        const p = pts[i];
+                        if (isInCircle(p, c)) continue;
+                        c = { x: p.x, y: p.y, r: 0 };
+                        for (let j = 0; j < i; j++) {
+                            const q = pts[j];
+                            if (isInCircle(q, c)) continue;
+                            c = circleFromTwo(p, q);
+                            for (let k = 0; k < j; k++) {
+                                const rP = pts[k];
+                                if (isInCircle(rP, c)) continue;
+                                const circ = circleFromThree(p, q, rP);
+                                if (circ) c = circ;
+                            }
+                        }
+                    }
+                    // Add visual radius R to fully enclose circles (centers + circle radius)
+                    return { type: 'circle', x: c.x, y: c.y, r: c.r + R };
+                }
+                return null;
+            }
+
+            const bounding = computeBoundingShape();
 
             // 1. Calculate Bounding Box
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
@@ -257,10 +341,18 @@ HTML_CONTENT = """
             const sqX = centerX - side / 2;
             const sqY = centerY - side / 2;
 
-            // 2. Draw Enclosing Square
+            // 2. Draw selected bounding shape
             ctx.strokeStyle = '#333';
             ctx.setLineDash([5, 5]);
-            ctx.strokeRect(sqX, sqY, side, side);
+            if (bounding) {
+                if (bounding.type === 'square') {
+                    ctx.strokeRect(bounding.x, bounding.y, bounding.side, bounding.side);
+                } else if (bounding.type === 'circle') {
+                    ctx.beginPath();
+                    ctx.arc(bounding.x, bounding.y, bounding.r, 0, Math.PI * 2);
+                    ctx.stroke();
+                }
+            }
             ctx.setLineDash([]);
 
             // 3. Draw Circles
@@ -273,7 +365,15 @@ HTML_CONTENT = """
                 ctx.stroke();
             });
 
-            statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining} | Square Side: ${(side/R).toFixed(2)} units`;
+            if (bounding) {
+                if (bounding.type === 'square') {
+                    statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining} | Square Side: ${(bounding.side / R).toFixed(2)} units`;
+                } else if (bounding.type === 'circle') {
+                    statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining} | Radius: ${(bounding.r / R).toFixed(2)} units`;
+                }
+            } else {
+                statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining}`;
+            }
         }
 
         function resetCanvas() {
@@ -288,8 +388,24 @@ HTML_CONTENT = """
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ circles: circles })
             });
-            const result = await response.json();
-            alert("Layout submitted successfully!");
+            if (!response.ok) {
+                alert('Submit failed');
+                return;
+            }
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const disposition = response.headers.get('Content-Disposition') || '';
+            let filename = 'layout.json';
+            const m = /filename="?([^";]+)"?/.exec(disposition);
+            if (m && m[1]) filename = m[1];
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            URL.revokeObjectURL(url);
+            alert('Layout download started.');
         }
     </script>
 </body>
@@ -301,11 +417,15 @@ async def index():
     return HTML_CONTENT
 
 @app.post("/submit")
-async def submit(data: dict):
-    # Here you can process or save the circle coordinates
-    submitted_layouts.append(data["circles"])
-    print(f"Received layout with {len(data['circles'])} circles.")
-    return {"status": "success", "count": len(data["circles"])}
+async def submit(request: Request):
+    data = await request.json()
+    circles = data.get("circles", [])
+    filename = f"layout_{int(time.time())}.json"
+    content = json.dumps({"circles": circles}, indent=2)
+    buf = BytesIO(content.encode("utf-8"))
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    print(f"Prepared download for layout with {len(circles)} circles as {filename}.")
+    return StreamingResponse(buf, media_type="application/json", headers=headers)
 
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=8000)
