@@ -1,0 +1,19 @@
+[project]
+name = "gumballs-v2"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Your Name",email = "you@example.com"}
+]
+requires-python = ">=3.13"
+dependencies = [
+    "fastapi[standard] (>=0.135.1,<0.136.0)",
+    "uvicorn (>=0.41.0,<0.42.0)"
+]
+
+[tool.poetry]
+package-mode = false
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
