@@ -1,0 +1,6 @@
+[bundle]
+name = "bundle"
+version = "0.1.0"
+description = "Bundles source code into one file"
+requires-python = ">=3.13"
+dependencies = []

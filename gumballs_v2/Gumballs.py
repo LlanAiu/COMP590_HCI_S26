@@ -159,18 +159,111 @@ HTML_CONTENT = """
         });
 
         window.addEventListener('keydown', (e) => {
-            if (e.key === 'd' || e.key === 'D') {
+            const key = e.key.toLowerCase();
+
+            // Delete under pointer with 'x'
+            if (key === 'x') {
                 const initialCount = circles.length;
                 circles = circles.filter(c => {
                     const dist = Math.sqrt((c.x - currentMouseX)**2 + (c.y - currentMouseY)**2);
                     return dist >= R; // Keep circles that do NOT overlap with the pointer
                 });
-                
-                if (circles.length !== initialCount) {
-                    draw();
-                }
+                if (circles.length !== initialCount) draw();
+                return;
+            }
+
+            // WASD: start continuous movement of hovered circle
+            if (['w','a','s','d'].includes(key)) {
+                // Find a hovered circle (pick first)
+                const hovered = circles.find(c => Math.sqrt((c.x - currentMouseX)**2 + (c.y - currentMouseY)**2) < R);
+                if (!hovered) return; // do nothing if pointer not over any circle
+
+                const dirMap = {
+                    w: {x:0, y:-1},
+                    a: {x:-1, y:0},
+                    s: {x:0, y:1},
+                    d: {x:1, y:0}
+                };
+                startMovement(hovered, dirMap[key]);
             }
         });
+
+        // Movement controls
+        let moving = false;
+        let movingCircle = null;
+        let moveDir = {x:0, y:0};
+        let lastFrameTime = 0;
+        const MOVE_SPEED = 200; // pixels per second
+
+        function wouldCollideAt(circleId, x, y) {
+            return circles.some(c2 => {
+                if (c2.id === circleId) return false;
+                const dist = Math.sqrt((x - c2.x)**2 + (y - c2.y)**2);
+                return dist < (2 * R) - 0.0001;
+            });
+        }
+
+        function startMovement(circle, dir) {
+            // set moving state
+            moving = true;
+            movingCircle = circle;
+            // normalize dir
+            const len = Math.sqrt(dir.x*dir.x + dir.y*dir.y) || 1;
+            moveDir = { x: dir.x/len, y: dir.y/len };
+            lastFrameTime = performance.now();
+            requestAnimationFrame(animateMovement);
+        }
+
+        function animateMovement(ts) {
+            if (!moving || !movingCircle) return;
+            const dt = (ts - lastFrameTime) / 1000.0;
+            lastFrameTime = ts;
+
+            const prevX = movingCircle.x;
+            const prevY = movingCircle.y;
+            const step = MOVE_SPEED * dt;
+            const nextX = prevX + moveDir.x * step;
+            const nextY = prevY + moveDir.y * step;
+
+            // Off-canvas check: if center moves fully off canvas, delete circle
+            if (nextX < -R || nextX > canvas.width + R || nextY < -R || nextY > canvas.height + R) {
+                // remove the moving circle
+                circles = circles.filter(c => c.id !== movingCircle.id);
+                moving = false;
+                movingCircle = null;
+                draw();
+                return;
+            }
+
+            // Collision detection: if would collide at next position, binary search back to tangent
+            if (wouldCollideAt(movingCircle.id, nextX, nextY)) {
+                // binary search between prev and next to find tangent distance
+                let lo = 0.0, hi = 1.0, mid = 0.0;
+                for (let i = 0; i < 18; i++) {
+                    mid = (lo + hi) / 2;
+                    const tx = prevX + (nextX - prevX) * mid;
+                    const ty = prevY + (nextY - prevY) * mid;
+                    if (wouldCollideAt(movingCircle.id, tx, ty)) {
+                        hi = mid;
+                    } else {
+                        lo = mid;
+                    }
+                }
+                // place at the last non-colliding position (lo)
+                movingCircle.x = prevX + (nextX - prevX) * lo;
+                movingCircle.y = prevY + (nextY - prevY) * lo;
+                moving = false;
+                movingCircle = null;
+                draw();
+                return;
+            }
+
+            // No collision: commit next position and continue
+            movingCircle.x = nextX;
+            movingCircle.y = nextY;
+            draw();
+            requestAnimationFrame(animateMovement);
+        }
 
         window.addEventListener('mouseup', () => { 
             if (draggingCircle) {
@@ -263,14 +356,22 @@ HTML_CONTENT = """
             ctx.strokeRect(sqX, sqY, side, side);
             ctx.setLineDash([]);
 
-            // 3. Draw Circles
-            circles.forEach(c => {
+            // 3. Draw Circles (with numbering)
+            circles.forEach((c, i) => {
                 ctx.beginPath();
                 ctx.arc(c.x, c.y, R, 0, Math.PI * 2);
                 ctx.fillStyle = checkCollision(c) ? '#ff4d4d' : '#007bff';
                 ctx.fill();
                 ctx.strokeStyle = '#003d80';
                 ctx.stroke();
+
+                // Draw number centered in circle
+                ctx.fillStyle = '#ffffff';
+                const fontSize = Math.max(10, Math.floor(R * 0.8));
+                ctx.font = `${fontSize}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(String(i + 1), c.x, c.y);
             });
 
             statsDisplay.innerText = `Placed: ${circles.length} | Remaining: ${remaining} | Square Side: ${(side/R).toFixed(2)} units`;
